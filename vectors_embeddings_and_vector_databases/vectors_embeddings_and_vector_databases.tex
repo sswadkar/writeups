@@ -9,7 +9,7 @@
 \usepackage{tikz}
 \usetikzlibrary{arrows.meta}
 
-\title{Vector Databases \& Embeddings}
+\title{Vectors, Embeddings, \& Vector Databases}
 \author{Saraansh Wadkar}
 \date{}
 
@@ -201,8 +201,8 @@ against a few individual cars:
     \node[above left] at (0,1.08) {\scriptsize $y$};
     \draw[->, ultra thick, black] (0,0) -- (-0.06,1.0);
     \draw[->, very thick, green!50!black] (0,0) -- (0.17,0.98);
-    \node[gray!70!black] at (0.34,0.83) {\scriptsize $\Delta \theta \approx 10^\circ$};
-    \node[black, above] at (0,1.0) {\scriptsize query};
+    \node[gray!70!black] at (0.84,0.83) {\scriptsize $\Delta \theta \approx 10^\circ$};
+    \node[black, left] at (0,1.0) {\scriptsize query};
     \node[green!50!black, above right] at (0.17,0.98) {\scriptsize Ford F-150};
 \end{tikzpicture}
 
@@ -222,7 +222,7 @@ match.
     \draw[->, ultra thick, black] (0,0) -- (-0.06,1.0);
     \draw[->, very thick, purple!70!black] (0,0) -- (0.99,0.14);
     \node[gray!70!black] at (0.47,0.54) {\scriptsize $\Delta \theta \approx 80^\circ$};
-    \node[black, above] at (0,1.0) {\scriptsize query};
+    \node[black, left] at (0,1.0) {\scriptsize query};
     \node[purple!70!black, right] at (0.99,0.14) {\scriptsize Chevy Bolt};
 \end{tikzpicture}
 
@@ -242,7 +242,7 @@ noise.
     \draw[->, ultra thick, black] (0,0) -- (-0.06,1.0);
     \draw[->, very thick, orange!90!black] (0,0) -- (0.80,-0.60);
     \node[gray!70!black] at (0.54,0.30) {\scriptsize $\Delta \theta \approx 125^\circ$};
-    \node[black, above] at (0,1.0) {\scriptsize query};
+    \node[black, left] at (0,1.0) {\scriptsize query};
     \node[orange!90!black, below right] at (0.80,-0.60) {\scriptsize Porsche 911};
 \end{tikzpicture}
 
@@ -278,5 +278,51 @@ capture similarity for numbers and other structured features. If two data
 points have similar numerical patterns, their vectors may still end up
 close together, allowing the database to retrieve values that are
 numerically or structurally related rather than only textually related.
+
+\subsection{Piecing it together}
+
+At this point, we have two ingredients: a way to turn data into vectors
+and a way to compare those vectors. The natural next question is what
+kind of structure would let us use those ingredients in a real system.
+Having individual vectors is not enough on its own. We need some
+organized way to store them alongside the data they came from so that a
+query can return something useful to a user rather than just a list of
+floating-point numbers.
+
+The simplest useful structure is a collection of records where each
+record contains the original content, its embedding vector, and whatever
+extra metadata we may want to keep around. Conceptually, a single entry
+might look like this:
+
+\begin{verbatim}
+{
+  id: 42,
+  content: "Toyota RAV4 is a compact SUV with good fuel economy",
+  embedding: [...],
+  metadata: {
+    brand: "Toyota",
+    type: "SUV"
+  }
+}
+\end{verbatim}
+
+Once the data is arranged this way, the workflow becomes much clearer. We
+embed each document, sentence, image caption, or product description
+ahead of time and store the resulting vector with the original record.
+Later, when a user submits a query, we embed the query into its own
+vector, compare it against the stored vectors, and return the records
+whose embeddings are closest. In other words, the useful structure is not
+just ``a pile of vectors,'' but a searchable collection of data where
+each vector remains tied to the object it represents.
+
+This is the basic idea that leads directly to vector databases. A typical
+vector database is built around storing many of these vector-backed
+records, keeping them associated with IDs and metadata, and making
+nearest-neighbor lookup fast enough to be practical even when the dataset
+becomes very large. We will look at how vector databases usually do that
+in the next section, but for now the important idea is simple: embeddings
+become useful when they are placed inside a structure that supports
+retrieval.
+
 
 \end{document}
