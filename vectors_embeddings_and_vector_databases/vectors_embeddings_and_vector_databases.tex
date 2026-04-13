@@ -7,6 +7,7 @@
 \usepackage{array}
 \usepackage{graphicx}
 \usepackage{tikz}
+\usepackage{hyperref}
 \usetikzlibrary{arrows.meta}
 
 \title{Vectors, Embeddings, \& Vector Databases}
@@ -51,8 +52,17 @@ similar contexts.
 By the time the model is used for embeddings, it has learned to map text
 into a high-dimensional latent space. This means that the output numbers
 are not chosen by hand and do not have obvious human-readable meanings on
-their own. Instead, the full vector matters as a whole. The position of
-that vector reflects the relationships the model learned during training.
+their own. More precisely, each dimension can end up carrying some
+semantic signal, so the coordinates are not meaningless random values.
+However, those meanings are not directly controlled by us or cleanly
+labeled ahead of time. They emerge during training and are usually spread
+across many dimensions in a way that is difficult to interpret exactly.
+Instead, the full vector matters as a whole. The position of that vector
+reflects the relationships the model learned during training. For a
+deeper intuition, 3Blue1Brown has a short video on how directions or
+dimensions in these spaces can pick up semantic meaning in
+\href{https://youtube.com/shorts/FJtFZwbvkI4?si=rtebhzbhDrnXiyIL}{this
+3Blue1Brown video}.
 
 For example, suppose we embed the sentence ``the cat sat on the mat.'' The
 model first tokenizes it into pieces such as ``the'', ``cat'', ``sat'',
