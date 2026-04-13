@@ -6,8 +6,10 @@
 \usepackage{physics}
 \usepackage{array}
 \usepackage{graphicx}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta}
 
-\title{Vector Databases}
+\title{Vector Databases \& Embeddings}
 \author{Saraansh Wadkar}
 \date{}
 
@@ -15,6 +17,266 @@
 
 \maketitle
 
-\section{}
+\section{What Is a Vector?}
+
+In the context of embeddings and vector databases, a vector is an
+$n$-dimensional ordered list of numbers:
+\[
+\mathbf{v} = [v_1, v_2, \dots, v_n].
+\]
+In practice, each coordinate is usually stored as a signed 32-bit
+floating-point value, so a single vector is often represented as an
+$n$-dimensional array of 4-byte floats.
+
+An embedding vector is useful because it encodes semantic meaning into
+geometry. Rather than storing meaning in words or symbols directly, the
+model maps text, images, or other data into a point in a high-dimensional
+space. Items with similar meaning are placed closer together, while items
+with different meanings are placed farther apart.
+
+For example, two sentences about databases may produce vectors that point
+in similar directions, even if they do not share the exact same words.
+This is what makes vector search possible: we compare the geometry of
+embeddings instead of relying only on exact keyword matches.
+
+\subsection{How Embeddings Are Created}
+
+The key question is how a piece of text becomes a useful vector at all.
+An embedding model first breaks text into smaller units called tokens.
+Those tokens are then processed by a neural network that has been trained
+on very large amounts of data. During training, the model learns internal
+patterns about which words, phrases, and concepts tend to appear in
+similar contexts.
+
+By the time the model is used for embeddings, it has learned to map text
+into a high-dimensional latent space. This means that the output numbers
+are not chosen by hand and do not have obvious human-readable meanings on
+their own. Instead, the full vector matters as a whole. The position of
+that vector reflects the relationships the model learned during training.
+
+For example, suppose we embed the sentence ``the cat sat on the mat.'' The
+model first tokenizes it into pieces such as ``the'', ``cat'', ``sat'',
+``on'', ``the'', and ``mat''. Those tokens are passed through many layers
+of the network, which combine them into a single output vector such as
+\[
+\mathbf{e}_{\text{cat}} = [0.12, -0.44, 0.91, \dots, 0.08].
+\]
+The exact numbers are not human-interpretable on their own. What matters
+is that another sentence like ``a kitten is resting on a rug'' will likely
+produce a vector in a nearby region of the space, because the model has
+learned that ``cat'' and ``kitten'' are related concepts and that both
+sentences describe similar situations.
+
+As a result, text with similar meaning tends to produce vectors that end
+up near each other, even when the wording changes. The embedding works
+because the model has compressed many layers of statistical and semantic
+structure into a numerical representation that preserves useful similarity
+relationships.
+
+\subsection{Semantic Search Example}
+
+Suppose you are shopping for a car and want something good for
+off-road adventures. You have a small catalog of cars, each with a short
+description. At first this sounds like a simple search problem, but there
+is an immediate issue: none of the descriptions may literally contain the
+phrase ``off-road adventures.'' A plain keyword search or \texttt{Ctrl+F}
+style lookup would therefore miss relevant cars even if some of them are
+actually a good fit.
+
+Here is the dataset:
+
+\begin{enumerate}
+    \item ``Tesla Model 3 is an electric sedan designed for daily commuting with great efficiency''
+    \item ``Ford F-150 is a powerful pickup truck built for hauling and towing heavy loads''
+    \item ``Toyota RAV4 is a compact SUV with good fuel economy and family-friendly features''
+    \item ``Porsche 911 is a high-performance sports car built for speed and handling''
+    \item ``Honda Civic is a reliable compact car ideal for commuting''
+    \item ``Chevy Bolt is an affordable electric hatchback for city driving''
+\end{enumerate}
+
+The Ford F-150 and Toyota RAV4 might both be relevant to an
+``off-road adventures'' style query, but neither description uses those
+exact words. So how do we search by meaning instead of by exact text?
+
+The key idea is to embed each description into a vector. Conceptually,
+each record might look like:
+
+\begin{verbatim}
+{
+  car_name: "Tesla Model 3",
+  description: "Electric sedan for efficient daily commuting",
+  vector: [...] 
+}
+\end{verbatim}
+
+The important point is that the \texttt{vector} is produced from the
+\texttt{description}. Once all the descriptions are embedded, we do the
+same thing to the user's query:
+
+\begin{quote}
+``vehicle good for off-road adventures''
+\end{quote}
+
+In this situation, the Toyota RAV4 and Ford F-150 might rank higher than
+the Tesla Model 3 or Honda Civic, even though none of the descriptions
+contain the exact phrase ``off-road adventures.'' The system works because
+the embedding model has placed related meanings in nearby parts of the
+vector space. This is the core promise of semantic search: retrieve by
+meaning, not just by literal keyword overlap.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[scale=2.4, >=Latex]
+    \draw[->, thin] (-1.2,0) -- (1.3,0);
+    \draw[->, thin] (0,-1.0) -- (0,1.2);
+    \node[below right] at (1.28,0) {\scriptsize $x$};
+    \node[above left] at (0,1.18) {\scriptsize $y$};
+
+    \draw[->, very thick, red!75!black!35] (0,0) -- (0.98,-0.10);
+    \node[red!75!black!55, right] at (0.98,-0.10) {\scriptsize Tesla Model 3};
+
+    \draw[->, very thick, blue!70!black!35] (0,0) -- (0.42,0.91);
+    \node[blue!70!black!55, above right] at (0.42,0.91) {\scriptsize Toyota RAV4};
+
+    \draw[->, very thick, green!50!black!35] (0,0) -- (0.10,1.00);
+    \node[green!50!black!55, above] at (0.10,1.00) {\scriptsize Ford F-150};
+
+    \draw[->, very thick, orange!90!black!35] (0,0) -- (0.84,-0.54);
+    \node[orange!90!black!55, below right] at (0.84,-0.54) {\scriptsize Porsche 911};
+
+    \draw[->, very thick, teal!70!black!35] (0,0) -- (0.82,0.44);
+    \node[teal!70!black!55, right] at (0.82,0.44) {\scriptsize Honda Civic};
+
+    \draw[->, very thick, purple!70!black!35] (0,0) -- (0.97,0.16);
+    \node[purple!70!black!55, right] at (0.97,0.16) {\scriptsize Chevy Bolt};
+
+    \draw[->, ultra thick, black] (0,0) -- (-0.08,1.00);
+    \node[black, left, align=right] at (-0.52,0.92) {\scriptsize query:\\[-1pt]\scriptsize off-road adventures};
+\end{tikzpicture}
+\caption{A 2D picture of semantic similarity. Real embeddings are
+high-dimensional, but the same directional intuition applies.}
+\end{figure}
+
+This picture is only 2D, while real embeddings live in much higher
+dimensions, but it captures the basic idea. Cars that are close together
+have similar descriptions. The Tesla Model 3, Honda Civic, and Chevy Bolt
+cluster in a more commuting- and city-driving-oriented direction. The
+Toyota RAV4 and Ford F-150 sit much closer to each other because their
+descriptions both emphasize utility. The query vector for
+``off-road adventures'' also points in that same general direction, which
+is why those vehicles would be better matches.
+
+At that point, the natural question becomes: how can we mathematically
+find which vectors are most similar?
+
+\subsubsection{Cosine Similarity}
+
+Once we have a query vector and a set of car vectors, we need a
+mathematical way to ask: which vectors point in the most similar
+direction? One of the most common answers is cosine similarity. Given
+vectors $\mathbf{u}$ and $\mathbf{v}$, their cosine similarity is
+\[
+\cos(\theta) =
+\frac{\mathbf{u} \cdot \mathbf{v}}{\norm{\mathbf{u}} \norm{\mathbf{v}}}.
+\]
+
+Intuitively, this is about angle. If two vectors point in almost the same
+direction, then the angle between them is close to $0^\circ$, and
+$\cos(0^\circ) = 1$. That means the vectors are highly similar. If the
+angle is around $90^\circ$, then $\cos(90^\circ) = 0$, which means they
+are effectively unrelated. If they point in opposite directions, the angle
+approaches $180^\circ$ and the cosine becomes negative.
+
+We can make that concrete by isolating the query vector and comparing it
+against a few individual cars:
+
+\begin{figure}[h]
+\centering
+\begin{minipage}[t]{0.31\textwidth}
+\centering
+\begin{tikzpicture}[scale=1.4, >=Latex]
+    \draw[->, thin] (-0.1,0) -- (1.1,0);
+    \draw[->, thin] (0,-0.1) -- (0,1.1);
+    \node[below right] at (1.08,0) {\scriptsize $x$};
+    \node[above left] at (0,1.08) {\scriptsize $y$};
+    \draw[->, ultra thick, black] (0,0) -- (-0.06,1.0);
+    \draw[->, very thick, green!50!black] (0,0) -- (0.17,0.98);
+    \node[gray!70!black] at (0.34,0.83) {\scriptsize $\Delta \theta \approx 10^\circ$};
+    \node[black, above] at (0,1.0) {\scriptsize query};
+    \node[green!50!black, above right] at (0.17,0.98) {\scriptsize Ford F-150};
+\end{tikzpicture}
+
+\vspace{0.2em}
+\scriptsize High similarity: $\cos(10^\circ) \approx 0.98$. The query and
+Ford point in almost the same direction, so this is a strong semantic
+match.
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.31\textwidth}
+\centering
+\begin{tikzpicture}[scale=1.4, >=Latex]
+    \draw[->, thin] (-0.1,0) -- (1.1,0);
+    \draw[->, thin] (0,-0.1) -- (0,1.1);
+    \node[below right] at (1.08,0) {\scriptsize $x$};
+    \node[above left] at (0,1.08) {\scriptsize $y$};
+    \draw[->, ultra thick, black] (0,0) -- (-0.06,1.0);
+    \draw[->, very thick, purple!70!black] (0,0) -- (0.99,0.14);
+    \node[gray!70!black] at (0.47,0.54) {\scriptsize $\Delta \theta \approx 80^\circ$};
+    \node[black, above] at (0,1.0) {\scriptsize query};
+    \node[purple!70!black, right] at (0.99,0.14) {\scriptsize Chevy Bolt};
+\end{tikzpicture}
+
+\vspace{0.2em}
+\scriptsize Weak similarity: $\cos(80^\circ) \approx 0.17$. Both are
+vehicles, but the meanings are mostly different, so this is close to
+noise.
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.31\textwidth}
+\centering
+\begin{tikzpicture}[scale=1.4, >=Latex]
+    \draw[->, thin] (-0.1,0) -- (1.1,0);
+    \draw[->, thin] (0,-0.75) -- (0,1.1);
+    \node[below right] at (1.08,0) {\scriptsize $x$};
+    \node[above left] at (0,1.08) {\scriptsize $y$};
+    \draw[->, ultra thick, black] (0,0) -- (-0.06,1.0);
+    \draw[->, very thick, orange!90!black] (0,0) -- (0.80,-0.60);
+    \node[gray!70!black] at (0.54,0.30) {\scriptsize $\Delta \theta \approx 125^\circ$};
+    \node[black, above] at (0,1.0) {\scriptsize query};
+    \node[orange!90!black, below right] at (0.80,-0.60) {\scriptsize Porsche 911};
+\end{tikzpicture}
+
+\vspace{0.2em}
+\scriptsize Negative similarity: $\cos(125^\circ) \approx -0.57$. This
+vector points in a very different direction, so it is a poor match for the
+query.
+\end{minipage}
+\caption{Cosine similarity compares the angle between the query vector and
+each car vector. Small angles mean high similarity; large angles mean weak
+or even negative similarity.}
+\end{figure}
+
+In the car-shopping example, we would compute the cosine similarity
+between the query vector and each car description vector, then sort the
+results from highest to lowest score. If the query vector points in a
+similar direction to the Toyota RAV4 vector, that suggests their meanings
+are related even though the query says ``off-road adventures'' and the
+description says ``compact SUV.'' This is exactly why cosine similarity is
+useful: it lets us retrieve semantically related results without needing
+the same literal words to appear in both strings.
+
+In practice, cosine similarity scores are often interpreted as rough
+relevance signals. A score around $0.9$ usually indicates a very strong
+match. Around $0.7$ is often still meaningfully related, but less precise.
+Around $0.4$ is more borderline: there may be some overlap in topic or
+context, but the match is weak. Around $0.2$ is often close to noise.
+These are heuristics rather than hard rules, since the exact thresholds
+depend on the embedding model and the dataset.
+
+The same idea is not limited to language. Vector representations can also
+capture similarity for numbers and other structured features. If two data
+points have similar numerical patterns, their vectors may still end up
+close together, allowing the database to retrieve values that are
+numerically or structurally related rather than only textually related.
 
 \end{document}
