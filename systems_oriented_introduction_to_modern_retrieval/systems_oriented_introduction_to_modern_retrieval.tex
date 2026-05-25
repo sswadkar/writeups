@@ -11,13 +11,15 @@
 \usepackage{hyperref}
 \usetikzlibrary{arrows.meta}
 
-\title{Retrieval, Vectors, Embeddings, \& Vector Databases}
+\title{A Systems-Oriented Introduction to Modern Retrieval}
 \author{Saraansh Wadkar}
 \date{}
 
 \begin{document}
 
 \maketitle
+\tableofcontents
+\newpage
 
 \section{The Retrieval Problem}
 
@@ -25,16 +27,15 @@ Suppose we have a collection of documents and a user asks a question. The
 system needs to find the parts of those documents that are relevant to the
 query. The documents might be product descriptions, support tickets, legal
 contracts, code files, research papers, or internal company notes. The
-same basic problem keeps showing up: given a query, return the text that
-is most likely to help.
+core job is simple to state: given a query, return the text that is most
+likely to help.
 
 \subsection{Raw Keyword Search}
 
 The simplest version is keyword search. If the query is ``Toyota RAV4,''
 we can look for catalog entries that contain the words ``Toyota'' and
-``RAV4.'' This works better than it sounds. Exact terms often matter a
-lot. Model names, trims, years, drivetrain labels, engine codes, and VINs
-usually need literal matching.
+``RAV4.'' Exact terms often matter a lot. Model names, trims, years,
+drivetrain labels, engine codes, and VINs usually need literal matching.
 
 But raw keyword search is brittle. Suppose a user asks for:
 
@@ -45,7 +46,7 @@ But raw keyword search is brittle. Suppose a user asks for:
 The best result might say ``compact SUV with all-wheel drive'' or
 ``pickup truck built for rough terrain.'' Those documents are relevant,
 but the exact query words may not appear. A literal keyword search can
-miss them for a boring reason: the words do not overlap enough.
+still miss them because the wording does not overlap enough.
 
 \subsection{TF-IDF: Making Word Counts Less Naive}
 
@@ -61,9 +62,9 @@ term like \texttt{RAV4}, \texttt{AWD}, ``hybrid,'' or ``hatchback'' should
 matter much more because it narrows the search quickly.
 
 That gives us the intuition behind TF-IDF. Term frequency asks how much a
-term appears in this document. Inverse document frequency asks how rare
-that term is across the whole collection. A useful search term is often
-one that appears in this document but does not appear everywhere.
+term appears in this document. Inverse document frequency captures how
+rare that term is across the whole collection. A good search term often
+shows up in this document without showing up everywhere else.
 
 TF-IDF is still lexical search, though. It can rank overlapping words more
 carefully, but it still needs overlap. If the query says ``vehicle'' and
@@ -73,15 +74,16 @@ the document says ``SUV,'' TF-IDF does not know those ideas are related.
 
 TF-IDF gets the basic rare-word intuition right, but practical ranking has
 a few more wrinkles. After TF-IDF, the next question is not just which
-words matter. It is also how repeated matches should change the score.
+words matter. We also need to decide how repeated matches should change
+the score.
 
 Repetition helps, but only up to a point. The first few mentions of a term
 like ``electric'' are strong evidence that a listing is really about an
-electric car. Later mentions still help, but each extra mention tells us
-less than the previous one. In other words, repetition should have
-diminishing returns. A document that mentions ``electric'' five times is
-probably more relevant than one that mentions it once. A document that
-repeats ``electric'' 50 times is not 50 times better.
+electric car. More mentions still help, but each extra mention tells us a
+little less than the one before it. Repetition should have diminishing
+returns. A document that mentions ``electric'' five times is probably more
+relevant than one that mentions it once. A document that repeats
+``electric'' 50 times is not 50 times better.
 
 Document length causes another problem. Long documents have more chances
 to contain any query term, so they can look relevant just because they
@@ -98,7 +100,7 @@ help with diminishing returns, and long documents need a correction so
 they do not win by default. It is still based on words, but it is a strong
 baseline for exact terms: model names, trims, VINs, drivetrain labels,
 engine types, and rare phrases. When exact wording matters, BM25 is often
-the right tool.
+a very good fit.
 
 \subsection{Where Lexical Search Still Breaks}
 
@@ -110,12 +112,11 @@ in meaning without being the same sentence. A document that says
 ``compact SUV with all-wheel drive'' may still be a good answer to a query
 about ``off-road adventures,'' even if the words barely line up.
 
-This is the gap semantic search is trying to fill. Instead of comparing
-text only by word overlap, semantic search maps both the documents and the
-query into vectors. Those vectors are arranged so that related meanings
-tend to land near each other. The search problem changes from ``which
-documents contain these words?'' to ``which stored meanings are closest
-to this query?''
+This is where semantic search helps. Instead of comparing text only by
+word overlap, it maps both the documents and the query into vectors. Those
+vectors are arranged so that related meanings tend to land near each
+other. At that point the question is no longer ``which documents contain
+these words?'' but ``which stored meanings are closest to this query?''
 
 \section{Semantic Search}
 
@@ -149,6 +150,16 @@ embeddings instead of relying only on exact keyword matches.
 \subsection{How Embeddings Are Created}
 
 The key question is how a piece of text becomes a useful vector at all.
+Modern embedding models are more complicated than the simplified story I
+am giving here. There is a lot going on under the hood, and there is a
+substantial literature on how these models tokenize text, build internal
+representations, and produce final embeddings. For our purposes, though,
+we can treat the model as a black box: it takes in text and returns an
+$n$-dimensional vector that captures enough semantic information to make
+similarity comparisons useful. In practice, texts with related meanings
+tend to end up near each other in that space, even when the wording is
+different.
+
 An embedding model first breaks text into smaller units called tokens.
 Those tokens are then processed by a neural network that has been trained
 on very large amounts of data. During training, the model learns internal
@@ -801,7 +812,7 @@ looking inside?
 
 \begin{figure}[h]
 \centering
-\begin{tikzpicture}[>=Latex, every node/.style={font=\small}]
+\begin{tikzpicture}[>=Latex, scale=0.50, transform shape, every node/.style={font=\small}]
     \draw[->, thin] (-0.2,0) -- (10.4,0);
     \draw[->, thin] (0,-0.2) -- (0,4.8);
 
@@ -942,19 +953,45 @@ pieces. It sounds mechanical, but it has a large effect on retrieval
 quality. A good embedding model cannot recover information that was cut
 into bad pieces.
 
-The simplest strategy is fixed-size chunking. For example, split every
-document into chunks of 500 tokens, maybe with 50 tokens of overlap
-between neighboring chunks. This is easy to implement and works
-reasonably well when documents have consistent structure. The overlap is
-there because important ideas often cross chunk boundaries. Without it, a
+\subsubsection{Recursive size-based chunking}
+
+The baseline strategy most people start with is recursive size-based
+chunking. The idea is simple: aim for chunks of roughly some target size,
+say 500 tokens, maybe with 50 tokens of overlap between neighboring
+chunks. Libraries such as LangChain expose utilities like
+\texttt{RecursiveCharacterTextSplitter}, but the general idea is broader
+than any one library.
+
+This approach is popular because it is easy to implement and operationally
+reliable. You can apply it to many different document types without
+needing a rich parser or clean structure metadata. The overlap matters
+because important ideas often cross chunk boundaries. Without it, a
 sentence at the end of one chunk and its explanation at the start of the
 next chunk may get separated.
 
-Another strategy is structure-aware chunking. Instead of splitting every
-500 tokens, we split on headings, paragraphs, list items, sections, code
-blocks, or other natural boundaries. This often produces chunks that feel
-more coherent because the chunk follows the shape of the document rather
-than an arbitrary token count.
+The limitation is that the boundaries are still mostly mechanical. Even if
+the splitter tries to prefer cleaner breakpoints, it is still working
+under a size constraint. That means a chunk can cut across an idea in a
+place that is technically allowed by the text but awkward for retrieval.
+
+\subsubsection{Structure-aware chunking}
+
+Structure-aware chunking tries to split on natural document boundaries
+instead: headings, paragraphs, list items, sections, code blocks, or
+other meaningful units. This usually produces chunks that feel more
+coherent because the chunk follows the shape of the document rather than
+an arbitrary token count.
+
+This is often the more powerful strategy because it tracks document
+meaning and layout more closely. A heading with the paragraphs underneath
+it is often a better retrieval unit than a random 500-token window. The
+same goes for a list of steps, a code example, or a single FAQ entry.
+
+The tradeoff is that it is harder to do well. Real documents are messy.
+HTML can be inconsistent, PDFs can lose structure during extraction, and
+mixed formats often blur the boundaries between sections, paragraphs, and
+lists. The idea is better, but turning real source material into clean
+structure-aware chunks usually takes more work.
 
 Metadata matters too. A chunk should usually keep track of where it came
 from: document ID, title, section heading, page number, URL, timestamp,
@@ -962,12 +999,162 @@ tenant, permissions, and any other fields needed at retrieval time. The
 metadata lets the system filter results, cite sources, and reconstruct
 context after retrieval.
 
-The basic rule is simple: chunking defines what the retriever can find. If
-the chunks are too large, results may be vague. If they are too small,
-results may be contextless. If they are split in awkward places, the
-embedding may represent a fragment rather than a useful idea.
+The basic rule is still the same: chunking defines what the retriever can
+find. If the chunks are too large, results may be vague. If they are too
+small, results may be contextless. If they are split in awkward places,
+the embedding may represent a fragment rather than a useful idea.
 
-\section{Quantization}
+\section{Retrieval Augmented Generation (RAG)}
+
+By this point, we have enough pieces to understand the theory behind a
+basic RAG system. We know why documents often need to be broken into
+chunks, why embeddings let us retrieve by meaning, why vector indexes make
+search practical at scale, and why lexical retrieval or fusion can
+improve the final candidate set. We also know that the system has to keep
+the original content and metadata around so the retrieved results are
+still usable as evidence.
+
+In its simplest form, RAG is a pipeline for turning a raw collection of
+documents into a system that can answer questions with retrieved context.
+The baseline recipe looks like this:
+
+\begin{enumerate}
+    \item Take a source document or collection of documents.
+    \item Split them into chunks that are small enough to retrieve but
+    large enough to preserve meaning.
+    \item Embed each chunk into a vector. The embedding model is doing a
+    lot more internally than this document has covered, but for system
+    design purposes it is enough to treat it as a black box that maps text
+    to a useful vector representation.
+    \item Store the chunk, its embedding, and its metadata in a retrieval
+    system.
+    \item At query time, embed the user's question and retrieve candidate
+    chunks.
+    \item Pass the retrieved context into a language model so it can
+    generate an answer grounded in that material.
+\end{enumerate}
+
+That is the core version of RAG. The language model is the final answer
+generator, but the quality of the system depends heavily on everything
+before that point. If the chunking is poor, the model never sees the
+right unit of information. If the embeddings do not place related content
+near each other, semantic retrieval weakens. If the index is too slow,
+the system will not scale.
+
+\begin{figure}[h]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[>=Latex, every node/.style={font=\small}]
+    \tikzstyle{stage}=[draw, rounded corners, minimum width=1.7cm, minimum height=0.68cm, align=center]
+    \tikzstyle{data}=[draw, rounded corners, minimum width=1.7cm, minimum height=0.68cm, align=center, fill=gray!6]
+    \tikzstyle{chunkrow}=[draw, rounded corners, minimum width=1.55cm, minimum height=0.34cm, align=center, fill=blue!6]
+
+    \node[font=\normalsize] at (6.8,3.1) {\textbf{Baseline RAG}};
+
+    \node[data] (docsA) at (1.2,1.55) {Documents};
+    \node[stage, fill=blue!8] (chunkA) at (4.0,1.55) {Chunk};
+    \node[stage, fill=green!8] (embedA) at (7.0,1.55) {Embed + store};
+    \draw[->, thick] (docsA) -- (chunkA);
+    \draw[->, thick] (chunkA) -- (embedA);
+
+    \node[data] (queryA) at (1.2,-1.0) {User query};
+    \node[stage, fill=orange!8] (retrieveA) at (4.0,-1.0) {Retrieve};
+    \draw[->, thick] (queryA) -- (retrieveA);
+    \draw[->, thick] (embedA) -- (retrieveA);
+
+    \node[chunkrow] (a1) at (9.8,0.2) {chunk A};
+    \node[chunkrow] (a2) at (9.8,-1.0) {chunk B};
+    \node[chunkrow] (a3) at (9.8,-2.2) {chunk C};
+    \draw[->, thick] (retrieveA.east) -- (a2.west);
+
+    \node[stage, fill=red!8] (genA) at (13.5,-1.0) {LLM answer};
+    \draw[->, thick] (a1.east) -| (genA.north);
+    \draw[->, thick] (a2.east) -- (genA.west);
+    \draw[->, thick] (a3.east) -| (genA.south);
+\end{tikzpicture}
+}
+\caption{Baseline RAG retrieves evidence and generates directly from it.}
+\end{figure}
+
+Many systems stop here. This is the standard architecture the reader
+should understand by this point in the document: take documents, chunk
+them, embed them, store them, retrieve relevant evidence, and generate an
+answer from that evidence.
+
+Some systems go one step further and add reranking after retrieval. A
+reranker can often improve the final evidence set by reordering or
+filtering the retrieved candidates more carefully. But at the time of
+writing, reranking is still better understood as a more advanced RAG
+pattern than as part of the default baseline. Many traditional systems
+and many simpler production systems do not use a reranker at all.
+This version can be stronger when the first-pass retriever finds the
+right material but orders it imperfectly. Even so, it is optional. You do
+not need reranking to understand or build a basic RAG system, and many
+working systems still stop after retrieval and generation.
+
+\begin{figure}[h]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[>=Latex, every node/.style={font=\small}]
+    \tikzstyle{stage}=[draw, rounded corners, minimum width=1.7cm, minimum height=0.68cm, align=center]
+    \tikzstyle{data}=[draw, rounded corners, minimum width=1.7cm, minimum height=0.68cm, align=center, fill=gray!6]
+    \tikzstyle{chunkrow}=[draw, rounded corners, minimum width=1.55cm, minimum height=0.34cm, align=center, fill=blue!6]
+    \tikzstyle{bestrow}=[draw, rounded corners, minimum width=1.35cm, minimum height=0.34cm, align=center, fill=green!10]
+
+    \node[font=\normalsize] at (8.2,3.1) {\textbf{RAG with reranking}};
+
+    \node[data] (docsB) at (1.2,1.55) {Documents};
+    \node[stage, fill=blue!8] (chunkB) at (4.0,1.55) {Chunk};
+    \node[stage, fill=green!8] (embedB) at (7.0,1.55) {Embed + store};
+    \draw[->, thick] (docsB) -- (chunkB);
+    \draw[->, thick] (chunkB) -- (embedB);
+
+    \node[data] (queryB) at (1.2,-1.0) {User query};
+    \node[stage, fill=orange!8] (retrieveB) at (4.0,-1.0) {Retrieve};
+    \draw[->, thick] (queryB) -- (retrieveB);
+    \draw[->, thick] (embedB) -- (retrieveB);
+
+    \node[chunkrow] (c1) at (9.2,0.95) {chunk C};
+    \node[chunkrow] (c2) at (9.2,-0.05) {chunk A};
+    \node[chunkrow] (c3) at (9.2,-1.05) {chunk D};
+    \node[chunkrow] (c4) at (9.2,-2.05) {chunk B};
+    \draw[->, thick] (retrieveB.east) -- (c2.west);
+
+    \node[stage, fill=yellow!18] (rerankB) at (12.4,-0.55) {Rerank};
+    \draw[->, thick] (c1.east) -| (rerankB.north);
+    \draw[->, thick] (c2.east) -- (rerankB.west);
+    \draw[->, thick] (c3.east) -| (rerankB.south);
+    \draw[->, thick] (c4.east) -- ++(0.8,0) |- (rerankB.south);
+
+    \node[bestrow] (best1) at (15.6,-0.15) {best A};
+    \node[bestrow] (best2) at (15.6,-0.95) {best C};
+    \draw[->, thick] (rerankB.east) -- (best2.west);
+
+    \node[stage, fill=red!8] (genB) at (18.9,-0.95) {LLM answer};
+    \draw[->, thick] (best1.east) -| (genB.north);
+    \draw[->, thick] (best2.east) -- (genB.west);
+\end{tikzpicture}
+}
+\caption{Reranked RAG inserts an extra post-retrieval step that reorders or
+filters candidate chunks before generation.}
+\end{figure}
+
+So the main thing to understand is that RAG is not one magical model. It
+is a pipeline made from several design choices working together:
+vectorization, storage, indexing, retrieval, and then generation from the
+retrieved evidence. Reranking, fusion, and additional retrieval passes
+can make that pipeline stronger, but they are later refinements on top of
+the core architecture rather than the definition of RAG itself.
+
+That basic pipeline is enough to explain a large fraction of practical
+RAG systems. The rest of the document moves into more advanced concerns:
+how to compress vectors, how to evaluate retrieval quality, how to plan
+queries more intelligently, how agentic systems extend retrieval, and how
+graph structure can complement vector search.
+
+\section{Advanced Topics}
+
+\subsection{Quantization}
 
 Vectors are expensive to store at scale. A 1536-dimensional embedding
 stored as 32-bit floats uses 6144 bytes before any metadata or index
@@ -1003,7 +1190,7 @@ speed, memory use, cache behavior, and sometimes recall. A quantized index
 can be a huge win, but only if the search quality stays good enough for
 the application.
 
-\subsection{Quantization In Practice}
+\subsubsection{Quantization In Practice}
 
 Quantization is worth considering when vector storage or memory bandwidth
 becomes a bottleneck. That usually happens with large vector collections,
@@ -1035,6 +1222,117 @@ vectors, run the same retrieval benchmark, and measure what changed. If
 storage and latency improve while recall and answer quality stay within
 the target range, quantization is doing its job. If the system starts
 missing important evidence, the memory savings are not worth it.
+
+\subsection{Evaluation}
+
+Evaluation is where retrieval systems stop being plausible and start being
+credible. Once a RAG pipeline is in place, the next question is whether
+it actually retrieves the right evidence and whether the final generated
+answer is grounded in that evidence. This area is active and still moving
+quickly, but a few evaluation patterns show up repeatedly in both
+practical systems and recent literature.
+
+\subsubsection{Offline retrieval evaluation}
+
+One common approach is to evaluate the retriever directly with metrics
+such as \texttt{recall@k}, MRR, or nDCG on a labeled query set. This
+isolates retrieval quality from generation quality and makes it easier to
+compare chunking strategies, embedding models, indexes, and rerankers.
+
+\subsubsection{End-to-end answer evaluation}
+
+Another approach is to evaluate the whole RAG system at the answer level.
+Here the question is not only whether the right chunk was retrieved, but
+whether the final answer is correct, supported, and complete enough for
+the task.
+
+\subsubsection{Synthetic data and judge-based evaluation}
+
+Recent systems often use synthetic queries, synthetic labels, or
+LLM-as-judge workflows to scale evaluation when human labels are
+expensive. These methods are useful, but they also introduce their own
+biases, so they need careful validation rather than blind trust.
+
+\subsection{Query Planning}
+
+Basic retrieval takes a query and runs it once. More advanced systems try
+to decide how the query should be handled before retrieval happens. That
+planning layer is increasingly important in modern RAG because many real
+questions are ambiguous, multi-hop, or better answered by a sequence of
+retrieval steps rather than a single search.
+
+\subsubsection{Query rewriting and decomposition}
+
+Some systems rewrite a user query into a form that is easier to retrieve
+against. Others decompose one question into multiple sub-queries so the
+retriever can gather evidence step by step.
+
+\subsubsection{Routing and retriever selection}
+
+Not every query should go through the same pipeline. A planner may decide
+whether to use lexical search, vector search, hybrid retrieval, a domain
+index, or some other specialized route depending on the query type.
+
+\subsubsection{Multi-step retrieval plans}
+
+More advanced architectures retrieve, inspect intermediate evidence, and
+then decide what to retrieve next. This turns retrieval into a small
+control problem rather than a single lookup.
+
+\subsection{Agentic RAG}
+
+Agentic RAG extends ordinary retrieval by letting a system take multiple
+actions while it works toward an answer. This is one of the fastest-moving
+parts of the literature right now. The core idea is that retrieval is no
+longer just a preprocessing step before generation. It becomes part of a
+longer reasoning-and-tool-use loop.
+
+\subsubsection{Tool use and iterative retrieval}
+
+Instead of retrieving once, an agent may search, inspect results, reform
+the query, call another tool, and retrieve again. This is useful when the
+first retrieval pass is incomplete or when the task needs several
+information sources.
+
+\subsubsection{Reflection and self-correction}
+
+Some agentic systems explicitly critique their own intermediate results
+and decide whether the current evidence is weak, contradictory, or
+missing. That can trigger another retrieval pass or a different tool call.
+
+\subsubsection{Long-horizon workflows}
+
+In more ambitious systems, retrieval is only one step inside a longer
+workflow involving planning, tool use, memory, and revision over many
+turns. That is much more powerful, but also much harder to evaluate and
+control.
+
+\subsection{Knowledge Graphs}
+
+Vector search is good at retrieving semantically similar content, but not
+every information problem is purely geometric. Knowledge graphs matter
+because they make entities and relationships explicit. That opens up a
+different set of retrieval and reasoning patterns that many current
+systems combine with embeddings rather than replacing them.
+
+\subsubsection{Graph-enhanced retrieval}
+
+One line of work uses graph structure to expand, constrain, or re-rank
+retrieval results. The graph can encode relationships that are hard to
+recover from vector similarity alone.
+
+\subsubsection{Entity and relation extraction}
+
+Another line of work focuses on building the graph itself by extracting
+entities and relations from unstructured documents. The quality of that
+extraction step often determines whether the graph is genuinely helpful.
+
+\subsubsection{Hybrid graph and vector systems}
+
+Many modern architectures combine graph retrieval and vector retrieval in
+the same system. The graph helps with explicit structure and multi-hop
+relations, while the vector index helps with semantic matching over raw
+text.
 
 
 \end{document}
