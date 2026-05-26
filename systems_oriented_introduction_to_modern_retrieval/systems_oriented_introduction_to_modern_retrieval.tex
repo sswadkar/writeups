@@ -1154,12 +1154,36 @@ graph structure can complement vector search.
 
 \section{Advanced Topics}
 
+Prefacing this section by saying it's not comprehensive whatsoever and will honestly feel more like a collection of scattered thoughts than it will feel like a coherent, well structured explanation of improvements you can make to your RAG system. The reason I label these advanced however is not because they're meaningfully complicated, rather they are mostly unnecessary in most use cases.
+
+As you'll read later, quantization isn't really meaningfully relevant to you unless your corpus starts nearing tens of millions of vectors. Evaluations are obviously very ideal in practice but often require a ton of labeling (and hence resources) that most entities aren't going to conduct. Agentic RAG and Knowledge graphs are amazing in theory but I've personally yet to convince myself of the fact that the additional expense is worth the potentially slight edge it may have over a properly made RAG system. 
+
 \subsection{Quantization}
 
-Vectors are expensive to store at scale. A 1536-dimensional embedding
-stored as 32-bit floats uses 6144 bytes before any metadata or index
-overhead. A million of those vectors is already several gigabytes. A
-hundred million vectors changes the economics of the system.
+Vectors are expensive to store at scale. Suppose an embedding has 1536
+dimensions and each coordinate is stored as a 32-bit float. Since a
+32-bit float uses 4 bytes, one vector takes
+\[
+1536 \times 4 = 6144 \text{ bytes.}
+\]
+If we store $N$ such vectors, the raw storage for the vectors alone is
+\[
+N \times 6144 \text{ bytes.}
+\]
+That scales faster than it may feel at first glance. For 10,000 vectors,
+the storage is $10{,}000 \times 6144 = 61{,}440{,}000$ bytes, or roughly
+61 MB. For 1,000,000 vectors, it becomes $6{,}144{,}000{,}000$ bytes, or
+roughly 6.1 GB. For 100,000,000 vectors, it becomes
+$614{,}400{,}000{,}000$ bytes, or roughly 614 GB. And that is before any
+metadata, indexing structures, replication, or operational overhead.
+
+We can always try to store vectors in a distributed way by sharding them
+across machines. That helps operationally, but it does not remove the
+underlying storage cost. The total number of bytes still has to exist
+somewhere. This is why compression matters: any meaningful reduction in
+per-vector size can materially reduce the size of the vector store, along
+with the memory pressure, hardware cost, and data movement that come with
+it.
 
 Quantization is one way to reduce that cost. The idea is to store vectors
 with less precision than full 32-bit floating point values. Instead of
@@ -1172,18 +1196,32 @@ exactly the same point in space. If the distortion is small, nearest
 neighbors mostly stay the same. If the distortion is large, the system may
 retrieve the wrong candidates.
 
-There are several families of quantization:
+\subsubsection{Scalar Quantization}
 
-\begin{itemize}
-    \item Scalar quantization stores each coordinate with fewer bits, such
-    as 8-bit integers instead of 32-bit floats.
-    \item Binary quantization compresses values very aggressively, often
-    down to signs or bit patterns.
-    \item Product quantization splits a vector into smaller subvectors and
-    stores compact codes for each part.
-    \item Newer methods try to preserve inner products and distances more
-    carefully while still reducing memory.
-\end{itemize}
+One natural idea is to ask: instead of storing each coordinate as a
+32-bit float, why not store a smaller integer? For example, we might map
+the original floating-point values into something like 8-bit integers.
+That immediately cuts the storage needed for each coordinate and can also
+reduce memory traffic during retrieval. The cost is that the vector is no
+longer represented exactly. We have forced a continuous value into a much
+smaller set of possible levels, so some geometric distortion is
+unavoidable.
+
+\subsubsection{Binary Quantization}
+
+We can push the idea even further. Instead of storing smaller integers,
+what if we store only binary information, such as signs or bit patterns?
+That is a much more aggressive form of compression. At first that can
+sound too lossy to be useful, but high-dimensional vectors often contain
+enough aggregate variation that even extremely compressed
+representations can still preserve useful retrieval signal. The tradeoff,
+of course, is that binary quantization is giving up much more information
+than scalar quantization, so the risk of hurting retrieval quality is
+higher.
+
+These are not the only quantization ideas, but they are a good place to
+start because the logic behind them follows directly from the storage
+problem itself.
 
 The goal is not just smaller files. In retrieval, compression changes
 speed, memory use, cache behavior, and sometimes recall. A quantized index
@@ -1192,36 +1230,38 @@ the application.
 
 \subsubsection{Quantization In Practice}
 
-Quantization is worth considering when vector storage or memory bandwidth
-becomes a bottleneck. That usually happens with large vector collections,
-high query volume, expensive memory, or systems that need to keep more of
-the index in RAM. It is less compelling when the dataset is small, the
-latency budget is loose, or retrieval quality is already fragile.
+Quantization starts to make sense when storage or memory bandwidth is
+actually hurting you. That usually means large vector collections, high
+query volume, expensive RAM, or systems that need to keep a large share
+of the index in memory. If the dataset is small, the latency budget is
+loose, or retrieval quality is already shaky, quantization may solve the
+wrong problem.
 
-The right way to evaluate quantization is empirical. Compare the
-compressed system against a full-precision baseline on the same queries.
-Useful measurements include \texttt{recall@k}, nDCG or MRR if relevance
-labels exist, latency, index size, build time, memory usage, and
-end-to-end answer quality. If the retriever feeds a language model, the
-final question is not only whether the nearest neighbors changed. It is
-whether the generated answer still has the right evidence.
+The only way to judge it is to test it. Take the compressed system and
+compare it against a full-precision baseline on the same queries. Measure
+\texttt{recall@k}, nDCG or MRR if you have labels, along with latency,
+index size, build time, memory use, and end-to-end answer quality. If the
+retriever feeds a language model, that last metric matters more than it
+first appears to. The real question is not just whether the nearest
+neighbors moved around a little. It is whether the model still gets the
+right evidence and produces the right answer.
 
-TurboQuant is one example of recent work in this area. The
+TurboQuant is one example of recent work here. The
 \href{https://arxiv.org/abs/2504.19874}{TurboQuant paper} describes an
-online vector quantization method aimed at preserving geometric structure
-while reducing memory. The paper reports near-optimal distortion rates,
+online vector quantization method meant to preserve geometric structure
+while cutting memory use. The paper reports low distortion,
 inner-product preservation through a residual correction step, strong
-results for KV-cache compression, and improvements over product
-quantization baselines in nearest-neighbor search experiments.
+results for KV-cache compression, and better nearest-neighbor search
+results than the product quantization baselines it compares against.
 
-Those are paper results, not a reason to blindly quantize every system.
-Whether a method like TurboQuant is useful depends on the embedding model,
-the dataset, the hardware, the index type, and the application's tolerance
-for missed results. The practical test is straightforward: compress the
-vectors, run the same retrieval benchmark, and measure what changed. If
-storage and latency improve while recall and answer quality stay within
-the target range, quantization is doing its job. If the system starts
-missing important evidence, the memory savings are not worth it.
+Those are research results, not a reason to compress everything by
+default. Whether a method like TurboQuant helps depends on the embedding
+model, the dataset, the hardware, the index, and how much missed
+retrieval the application can tolerate. In practice, the test is simple:
+compress the vectors, run the same benchmark, and see what changed. If
+storage and latency improve without pushing recall or answer quality below
+the level you need, the compression is probably worth it. If the system
+starts missing evidence that mattered before, it probably is not.
 
 \subsection{Evaluation}
 
@@ -1234,24 +1274,138 @@ practical systems and recent literature.
 
 \subsubsection{Offline retrieval evaluation}
 
-One common approach is to evaluate the retriever directly with metrics
-such as \texttt{recall@k}, MRR, or nDCG on a labeled query set. This
-isolates retrieval quality from generation quality and makes it easier to
-compare chunking strategies, embedding models, indexes, and rerankers.
+The basic setup is simple. Start with a query set. For each query, decide
+which chunks count as relevant evidence. Then run the retriever and look
+at the ranked list it returns. That gives you the core object retrieval
+evaluation works with: a query, a ground-truth notion of relevance, and
+an ordered result list.
+
+The reason ranking matters is that retrieval is not only about whether a
+useful chunk appears somewhere. It is also about where it appears. In a
+RAG system, the top of the list gets the most attention. If the relevant
+evidence is buried too far down, the language model may never see it, or
+it may receive it too late and with too much noise around it.
+
+Take a small example. Suppose the query is:
+\begin{quote}
+``What changed in the 2024 return policy?''
+\end{quote}
+and the retriever returns these top four chunks:
+\begin{enumerate}
+    \item chunk A: a shipping FAQ
+    \item chunk B: the 2024 return policy update
+    \item chunk C: a warranty page
+    \item chunk D: a summary of return exceptions
+\end{enumerate}
+Assume chunks B and D are the relevant evidence for this query.
+
+\paragraph{\texttt{recall@k}}
+
+One natural question is: did the retriever surface the relevant evidence
+within the first $k$ results? That is the idea behind
+\texttt{recall@k}. In this example, \texttt{recall@1} is 0 because the
+first result is not relevant. \texttt{recall@2} is $1/2$ because one of
+the two relevant chunks has appeared in the top two. \texttt{recall@4} is
+$2/2 = 1$ because both relevant chunks appear within the top four.
+This metric is useful when coverage matters more than fine ordering. That
+often happens in RAG, where missing a key chunk can hurt more than having
+the right chunk in position 2 instead of position 1.
+
+\paragraph{MRR}
+
+Another question is: how far down the ranking do we have to go before we
+hit the first relevant result? In the example above, the first relevant
+chunk appears at rank 2. The reciprocal of that rank is $1/2$. That is
+the per-query reciprocal rank. Mean reciprocal rank, or MRR, is just the
+average of that quantity across many queries. MRR is useful when you care
+strongly about getting at least one good hit very early. Its limitation is
+that it pays attention only to the first relevant result. If the task
+needs several relevant chunks, MRR can look healthy even when the rest of
+the evidence is ordered poorly.
+
+\paragraph{nDCG}
+
+Some tasks need a finer notion of relevance than yes or no. Maybe one
+chunk contains the exact policy change, another contains a partial
+summary, and another only provides weak supporting context. That is where
+nDCG becomes useful. The logic is straightforward: more relevant items
+should appear earlier, lower positions should count less, and the score
+should be normalized against the best possible ranking.
+
+Using the same top four results, suppose the graded relevance labels are:
+chunk A = 1, chunk B = 3, chunk C = 0, and chunk D = 2. Then the
+retriever's ranking has gains $[1,3,0,2]$. A common discounted cumulative
+gain is
+\[
+\mathrm{DCG}@4 =
+\frac{2^1-1}{\log_2(1+1)} +
+\frac{2^3-1}{\log_2(2+1)} +
+\frac{2^0-1}{\log_2(3+1)} +
+\frac{2^2-1}{\log_2(4+1)}.
+\]
+Numerically, that is about
+\[
+1 + \frac{7}{\log_2 3} + 0 + \frac{3}{\log_2 5} \approx 6.71.
+\]
+If we sort the same gains into the ideal ranking $[3,2,1,0]$, then
+\[
+\mathrm{IDCG}@4 =
+7 + \frac{3}{\log_2 3} + \frac{1}{\log_2 4} + 0 \approx 9.39.
+\]
+So
+\[
+\mathrm{nDCG}@4 = \frac{\mathrm{DCG}@4}{\mathrm{IDCG}@4}
+\approx \frac{6.71}{9.39} \approx 0.71.
+\]
+The exact number matters less than the interpretation: the ranking is not
+terrible, but it is clearly worse than the ideal ordering because the
+best evidence is not at the top.
+
+\paragraph{Comparing the metrics}
+
+In practice, these metrics answer different questions. \texttt{recall@k}
+is good for evidence coverage. MRR is good for early first-hit quality.
+nDCG is good for ranking quality when relevance is graded. Teams often
+track more than one of them because each exposes a different failure mode.
+This is also why offline retrieval evaluation is useful: it isolates the
+retriever and makes it easier to compare chunking strategies, embedding
+models, indexes, and rerankers before generation enters the picture.
 
 \subsubsection{End-to-end answer evaluation}
 
 Another approach is to evaluate the whole RAG system at the answer level.
 Here the question is not only whether the right chunk was retrieved, but
 whether the final answer is correct, supported, and complete enough for
-the task.
+the task. A system can retrieve the right chunk and still give a weak
+answer because the prompt is poor, the model overgeneralizes, or the
+evidence is not used well. The reverse can also happen: the retriever can
+be imperfect, but the final answer is still good enough for the user.
+
+That is why answer-level evaluation usually asks several separate
+questions. Is the answer factually correct? Is it grounded in retrieved
+evidence rather than invented? Does it include the important parts of the
+answer, or is it incomplete? And for the actual use case, is it useful
+enough to help the user finish the task they came to do?
 
 \subsubsection{Synthetic data and judge-based evaluation}
 
 Recent systems often use synthetic queries, synthetic labels, or
 LLM-as-judge workflows to scale evaluation when human labels are
-expensive. These methods are useful, but they also introduce their own
-biases, so they need careful validation rather than blind trust.
+expensive. The appeal is obvious: hand-labeling retrieval data is slow and
+costly, and answer-level review is even more expensive. Synthetic queries
+can expand a test set quickly, and LLM judges can score answers at a much
+lower cost than full human review.
+
+The catch is that these methods can fail in recognizable ways. Synthetic
+queries may not look like real user behavior. Synthetic labels may reflect
+the assumptions of the generator rather than the real task. A model that
+judges another model can drift toward self-confirming behavior, especially
+if both share similar weaknesses. And even a strong judge can be
+inconsistent across domains or prompt formulations.
+
+So these methods are useful, but they are best treated as scaling tools
+for iteration rather than as unquestioned ground truth. In practice, they
+work best when they are calibrated against at least some human judgments.
 
 \subsection{Query Planning}
 
@@ -1263,76 +1417,188 @@ retrieval steps rather than a single search.
 
 \subsubsection{Query rewriting and decomposition}
 
-Some systems rewrite a user query into a form that is easier to retrieve
-against. Others decompose one question into multiple sub-queries so the
-retriever can gather evidence step by step.
+Embedding the raw user query is not always the best move. The question in
+your head and the query you would actually type into Google are often not
+the same thing. Human questions are frequently conversational, indirect,
+or missing the exact words that matter for retrieval. A retriever often
+benefits from a cleaner, more explicit version of the same intent.
+
+For example, imagine a user asks:
+\begin{quote}
+``I'm trying to remember the rule about when you can still return
+something even if it's already been opened.''
+\end{quote}
+That is a perfectly natural question, but it is not an ideal retrieval
+query. A rewritten version might be:
+\begin{quote}
+``opened product return policy exceptions''
+\end{quote}
+The rewritten query adds the key terms ``return policy'' and
+``exceptions,'' removes filler, and makes the retrieval target much more
+obvious.
+
+Here is a different failure mode. Suppose the user asks:
+\begin{quote}
+``Why does that electric SUV lose range so badly in the winter?''
+\end{quote}
+If the document collection is full of technical product information, the
+retriever may do better with something like:
+\begin{quote}
+``electric SUV winter range loss battery temperature efficiency''
+\end{quote}
+This rewrite adds missing retrieval terms that the user implied but did
+not say directly. The user asked a natural question. The retriever often
+wants something closer to a search query.
+
+Sometimes rewriting is still not enough because the question actually
+contains several retrieval problems at once. For example:
+\begin{quote}
+``Which database should we use for support-ticket search, and how would
+we evaluate whether it is better than our current setup?''
+\end{quote}
+That can be decomposed into at least two sub-queries: one about database
+options for retrieval, and another about evaluation methodology. In cases
+like that, decomposition helps because the system is no longer forcing one
+retrieval pass to answer two different questions.
 
 \subsubsection{Routing and retriever selection}
 
-Not every query should go through the same pipeline. A planner may decide
-whether to use lexical search, vector search, hybrid retrieval, a domain
-index, or some other specialized route depending on the query type.
+Once the system has a cleaner version of the query, it may also choose a
+better retrieval route. Not every query should go through the same
+pipeline. Some queries want exact lexical matching. Others benefit from
+semantic search or a hybrid approach.
+
+For instance, a query like
+\begin{quote}
+``Toyota RAV4 2021 towing capacity AWD''
+\end{quote}
+is heavily keyword-driven. Exact model names, years, and trims matter, so
+a lexical or BM25-heavy route is a natural choice. But a query like
+\begin{quote}
+``family car good for snow and road trips''
+\end{quote}
+is much fuzzier. That kind of query often benefits from semantic search
+or a hybrid retriever that combines lexical and embedding-based signals.
+Planning is not only about rewriting the query. It is also about choosing
+where that query should go.
 
 \subsubsection{Multi-step retrieval plans}
 
-More advanced architectures retrieve, inspect intermediate evidence, and
-then decide what to retrieve next. This turns retrieval into a small
-control problem rather than a single lookup.
+Some questions should not be answered in one retrieval pass at all. A
+stronger pattern is to retrieve, inspect what came back, and then decide
+what to retrieve next.
+
+For example, suppose a user asks:
+\begin{quote}
+``Why did last quarter's returns spike?''
+\end{quote}
+The first retrieval pass might surface documents showing that most returns
+came from one product line. At that point the next retrieval step becomes
+clearer: search specifically for defects, shipping issues, or policy
+changes related to that product line. The second query is better because
+the first retrieval step told us what the real issue probably is.
+
+This is why query planning matters. Retrieval is not always one clean
+lookup against a perfectly phrased query. Sometimes the system needs to
+rewrite the question, sometimes it needs to split it apart, and sometimes
+it needs one retrieval step to figure out what the next retrieval step
+should be.
 
 \subsection{Agentic RAG}
 
-Agentic RAG extends ordinary retrieval by letting a system take multiple
-actions while it works toward an answer. This is one of the fastest-moving
-parts of the literature right now. The core idea is that retrieval is no
-longer just a preprocessing step before generation. It becomes part of a
-longer reasoning-and-tool-use loop.
+Query planning already introduced several ways to improve retrieval before
+the main search happens: rewriting the query, routing it to a better
+retriever, or decomposing the task into several steps. Agentic RAG is the
+next move beyond that. The difference is not just that the system takes
+more steps. The difference is that it can react to the evidence that comes
+back while retrieval is in progress.
+
+That distinction matters. Query planning decides how to search before the
+results are known. Agentic RAG can revise that decision after seeing what
+retrieval actually produced. In that sense, retrieval becomes a feedback
+process rather than a one-shot lookup.
 
 \subsubsection{Tool use and iterative retrieval}
 
-Instead of retrieving once, an agent may search, inspect results, reform
-the query, call another tool, and retrieve again. This is useful when the
-first retrieval pass is incomplete or when the task needs several
-information sources.
+The first retrieval pass often does not answer the question directly. It
+may only reveal the shape of the problem. That is still useful because the
+system can use the first batch of evidence to decide what to retrieve next.
+
+Suppose a user asks:
+\begin{quote}
+``Why did payment failures spike last night?''
+\end{quote}
+That is too vague for one perfect retrieval step. A first pass over
+incident notes, dashboards, and alerts might surface repeated references
+to one payment gateway or one error family such as ``3DS challenge
+timeouts.'' Once that focal entity appears, the second retrieval step
+becomes much sharper: search specifically for that gateway, that timeout
+class, recent deploys touching that path, and similar incidents. The first
+search did not solve the problem. It exposed where the evidence probably
+lives.
+
+This is the practical meaning of iterative retrieval. The system is not
+performing extra tool use for its own sake. It is gathering evidence in
+stages, where each retrieval pass makes the next one more targeted.
 
 \subsubsection{Reflection and self-correction}
 
-Some agentic systems explicitly critique their own intermediate results
-and decide whether the current evidence is weak, contradictory, or
-missing. That can trigger another retrieval pass or a different tool call.
+Reflection and self-correction are the stronger version of this pattern.
+The system retrieves evidence, inspects whether it is relevant,
+contradictory, or noisy, and then decides how to correct retrieval before
+it answers. The important move is not ``think harder.'' The important move
+is ``use the returned evidence to improve the next search.''
+
+One useful mechanism is positive and negative retrieval guidance. A
+positive example is a retrieved chunk that looks like the kind of evidence
+the system wants more of. A negative example is a chunk that is loosely
+related in embedding space but is actually distracting, off-target, or
+from the wrong subdomain. This matters especially for vector search, where
+semantic similarity can pull in material that is nearby in meaning but not
+nearby in operational usefulness. If the retriever can take both ``more
+like this'' and ``less like this'' signals, the next search can move
+toward a better evidence neighborhood.
+
+Consider an ambiguous support question:
+\begin{quote}
+``Can I still send it back if I opened the box?''
+\end{quote}
+An initial vector search might return a mix of return-policy chunks and
+warranty pages because both talk about eligibility, product condition, and
+customer remedies. After seeing those results, the system can mark one
+return-policy chunk as a positive example and one warranty chunk as a
+negative example, then run retrieval again with that guidance. The
+improvement here is not just query rewriting. Rewriting changes the query
+before retrieval. Reflection changes retrieval after the system has seen
+that the current evidence is mixing two different policy neighborhoods.
+
+Now consider a product or incident analysis question:
+\begin{quote}
+``What explains the recent failures in this device line?''
+\end{quote}
+The first pass might retrieve documents about several superficially
+similar product lines, along with multiple possible causes. Suppose one
+defect report clearly matches the failure symptoms while a shipping-delay
+report appears only because it mentions the same product family and time
+window. The system can treat the defect report as a positive example and
+the shipping-delay report as a negative example, then issue another vector
+search guided by both signals. That second pass moves toward the right
+cluster of evidence. Again, this is different from plain query rewriting.
+The correction depends on what retrieval produced, not just on a cleaner
+phrasing of the original question.
+
+The reason this works is simple. The first retrieval pass is often useful
+even when it is imperfect. Partial or bad results still reveal what the
+system should avoid and what it should chase. That turns retrieval into a
+feedback loop: the initial pass generates evidence, the system judges that
+evidence, and the next pass is shaped by that judgment.
 
 \subsubsection{Long-horizon workflows}
 
-In more ambitious systems, retrieval is only one step inside a longer
-workflow involving planning, tool use, memory, and revision over many
-turns. That is much more powerful, but also much harder to evaluate and
-control.
-
-\subsection{Knowledge Graphs}
-
-Vector search is good at retrieving semantically similar content, but not
-every information problem is purely geometric. Knowledge graphs matter
-because they make entities and relationships explicit. That opens up a
-different set of retrieval and reasoning patterns that many current
-systems combine with embeddings rather than replacing them.
-
-\subsubsection{Graph-enhanced retrieval}
-
-One line of work uses graph structure to expand, constrain, or re-rank
-retrieval results. The graph can encode relationships that are hard to
-recover from vector similarity alone.
-
-\subsubsection{Entity and relation extraction}
-
-Another line of work focuses on building the graph itself by extracting
-entities and relations from unstructured documents. The quality of that
-extraction step often determines whether the graph is genuinely helpful.
-
-\subsubsection{Hybrid graph and vector systems}
-
-Many modern architectures combine graph retrieval and vector retrieval in
-the same system. The graph helps with explicit structure and multi-hop
-relations, while the vector index helps with semantic matching over raw
-text.
-
+At the broadest end of the design space, retrieval sits inside a longer
+memory, planning, and action loop that can run over many turns. Those
+systems may be useful for larger tasks, but they are also much harder to
+control and evaluate, so the core retrieval story here is still the
+shorter feedback loop of retrieve, inspect, and retrieve again.
 
 \end{document}
