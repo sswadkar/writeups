@@ -4,6 +4,12 @@ This repository collects short technical writeups and their source files. The in
 
 ## Current Writeups
 
+### A Systems-Oriented Introduction to Modern Retrieval
+
+Files: [`systems_oriented_introduction_to_modern_retrieval/systems_oriented_introduction_to_modern_retrieval.pdf`](./systems_oriented_introduction_to_modern_retrieval/systems_oriented_introduction_to_modern_retrieval.pdf), [`systems_oriented_introduction_to_modern_retrieval/systems_oriented_introduction_to_modern_retrieval.tex`](./systems_oriented_introduction_to_modern_retrieval/systems_oriented_introduction_to_modern_retrieval.tex)
+
+This writeup explains modern retrieval from a systems perspective. It starts with the retrieval problem itself, builds through lexical and semantic search, introduces embeddings and vector databases, and then moves into retrieval-augmented generation, reranking, and later-stage system concerns such as quantization, evaluation, query planning, agentic retrieval workflows, and graph-enhanced retrieval.
+
 ### Voltage vs Current Control
 
 Files: [`voltage_vs_current_control/voltage_vs_current_control.pdf`](./voltage_vs_current_control/voltage_vs_current_control.pdf), [`voltage_vs_current_control/voltage_vs_current_control.tex`](./voltage_vs_current_control/voltage_vs_current_control.tex)

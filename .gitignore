@@ -1,4 +1,6 @@
 .DS_Store
+.vscode/
+.omx/
 
 # LaTeX build artifacts
 *.aux
